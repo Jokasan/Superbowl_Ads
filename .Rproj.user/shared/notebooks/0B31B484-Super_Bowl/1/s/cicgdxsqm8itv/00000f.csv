@@ -1,0 +1,7 @@
+"0","youtube %>% "
+"0","  select(where(is.numeric),-X,-category_id,-favorite_count) %>% "
+"0","  na.omit() %>% "
+"0","  cor() -> res"
+"0",""
+"0","corrplot(res, type = ""upper"", order = ""hclust"", "
+"0","         tl.col = ""black"", tl.srt = 45) -> p"

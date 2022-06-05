@@ -1,0 +1,373 @@
+---
+title: "Superbowl"
+format:
+  html:
+    theme: minty
+    code-fold: true
+    code-summary: "Show the code"
+    toc: true
+---
+
+```{r, echo=FALSE}
+# load Packages
+pacman::p_load(tidyverse,corrplot,reactablefmtr,reactable,tidymodels,gt,simplevis)
+library(dplyr, warn.conflicts = FALSE)
+
+# Suppress summarise info
+options(dplyr.summarise.inform = FALSE)
+# Load Data:
+read.csv(file = "youtube.csv")->youtube
+# Set theme Up:
+ theme_set(theme_void(base_family = "Verdana"))
+# 
+theme_update(
+  axis.text.x = element_text(color = "black", face = "bold", size = 8,
+                            angle=15,vjust=1,hjust=1),
+  axis.text.y = element_text(color = "black", size = 9, hjust = 1,
+                             family = "Verdana"),
+  axis.line.x = element_line(color = "black", size = .5),
+  plot.background = element_rect(fill = "white", color = "white"))
+
+# 
+# 
+## theme for horizontal charts
+theme_flip <-
+  theme(
+    axis.text.x = element_text(face = "plain", family = "Verdana", size = 22),
+    axis.text.y = element_text(face = "bold", family = "Verdana", size = 26),
+    panel.grid.major.x = element_line(color = "grey90", size = .6),
+    panel.grid.major.y = element_blank(),
+    legend.position = "top",
+    legend.text = element_text(family = "Verdana", size = 18),
+    legend.title = element_text(face = "bold", size = 18, margin = margin(b = 25))
+  )
+
+# ## custom colors
+my_pal <- rcartocolor::carto_pal(n = 8, name = "Bold")[c(1, 3, 7, 2,4,6,8,9,5,10)]
+```
+
+# Data Understanding
+
+[This report is concerned with Superbowl ad YouTube data, from the years 2000 up until 2020](https://github.com/rfordatascience/tidytuesday/blob/master/data/2021/2021-03-02/readme.md). The data contains a set of metrics for each brand that featured an advert, these include view count, like count, dislike count and so on. The table below summarizes these across all the years:
+
+```{r}
+youtube %>% 
+  group_by(brand) %>% 
+  summarise(`Total Views` = sum(view_count,na.rm = TRUE),
+            `Total Likes` = sum(like_count,na.rm = TRUE),
+            `Total Dislikes` = sum(dislike_count,na.rm = TRUE),
+            `Total Comments`= sum(comment_count,na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  mutate_if(is.numeric,scales::comma) %>% 
+  rename(Brand=brand) %>% 
+  gt() %>% 
+  tab_header(
+    title = md("**Superbowl Ad Youtube Metrics by Brand**"),
+    subtitle = "From 2000-2022"
+  )
+```
+
+It seems that Doritos is the best performing brand across all metrics except total comments, where NFL reigns supreme. It might be interesting to do a further deep dive into the data, focusing on the amount of likes relative to the total views for the year 2020. This is shown in the figure below:
+
+```{r, mesage=FALSE}
+# Like to view ration
+youtube %>% filter(year == 2020) %>%
+  select(brand, title, where(is.numeric)) %>%
+  na.omit() %>%
+  group_by(brand,title) %>%
+  summarise(l_to_v_ratio =like_count/view_count) %>%
+  mutate(label=scales::percent(l_to_v_ratio,accuracy = 0.01)) %>% 
+  ungroup() -> tt
+# Create DF for table
+tt %>% 
+  select(brand,l_to_v_ratio) %>% 
+  rename(Brand = brand,
+         "Like to views ratio"= l_to_v_ratio)->for_table
+
+# Create Table
+reactable(
+    for_table,
+    pagination = FALSE,
+    defaultColDef = colDef(
+        cell = data_bars(for_table, 
+                         number_fmt = scales::percent_format(accuracy = .11))
+    )
+)
+```
+
+Bud light has the highest like to views ratio for the year 2020. This advert featured Post Malone and had a total of 47,752
+views and 485 likes. In contrast, Kia featured the lowest like to views ratio, with 17,892 views and 78 likes. It might be
+interesting to look at the fluctuation of views over time, this is shown in the figure below:
+
+```{r}
+youtube %>% 
+  select(brand,year,view_count) %>%
+  rename(Brand = brand) %>% 
+  group_by(Brand,year) %>% 
+  summarise(Views=sum(view_count,na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  mutate(year = paste0("'", str_sub(year, 3, 4))) %>% 
+  pivot_wider(names_from = year,values_from = Views,values_fill=0) %>% 
+select(Brand,`'00`:`'14`,`'15`,`'16`,`'17`,`'18`,`'19`,`'20`)->heatmap
+
+reactable(
+  heatmap,
+  compact = TRUE,
+  pagination = FALSE,
+  showSortIcon = FALSE,
+  defaultSorted = "'00",
+  defaultSortOrder = 'desc',
+  defaultColDef = colDef(
+    maxWidth = 60,
+    align = 'center',
+    cell = tooltip(number_fmt = scales::comma),
+    style = color_scales(heatmap, show_text = FALSE, span = TRUE,colors = viridis::viridis(2))
+  ),
+  columns = list(
+    country = colDef(
+      maxWidth = 175,
+      align = 'left'
+    )
+  )
+) %>% 
+  add_title('Total Views Per Year')
+```
+
+
+Doritos in 2012 and Budweiser in 2017 stand out as years of strong viewership numbers.
+
+# Exploring variable relationships
+
+In order to perform modelling on the dataset, we should become familiar with the relationships between the data,for instance are like count and view count positively or negatively correlated? The figure below explores these relationships:
+
+```{r, echo=TRUE}
+youtube %>% 
+  select(where(is.numeric),-X,-category_id,-favorite_count) %>% 
+  na.omit() %>% 
+  cor() -> res
+
+corrplot(res, type = "upper", order = "hclust", 
+         tl.col = "black", tl.srt = 45) -> p
+```
+
+All the numeric variables in our data set are positively correlated, albeit to different extents. Consider the relationship between dislike count and year, the correlation is very small. In contrast like count and view count are very strongly positively correlated, implying that as the number of views increases so too does the number of likes.
+
+## Does view count like count increase with view count?
+
+The relationship between likes and views can be further explored by plotting the two variables, this is shown in the figure below:
+
+```{r, warning=FALSE, message=FALSE}
+youtube %>% 
+  ggplot(aes(like_count,view_count, color=brand))+
+  geom_jitter(na.rm = TRUE)+
+  geom_smooth(na.rm = TRUE, se=FALSE)+
+  scale_y_continuous(labels=scales::number_format(scale = 100))+
+  scale_x_continuous(labels=scales::number_format(scale = 100))+
+  scale_color_manual(values = my_pal)+
+  theme_minimal() +
+  labs(color="Brand")+
+  ylab("View Count")+
+  xlab("Like Count")
+```
+
+Although, we can get a grasp of the direction of the correlation, given the different scales of the performance of the different brands, it would make more sense to explore the relationship on a log scale:
+
+```{r, warning=FALSE,message=FALSE}
+youtube %>% 
+  ggplot(aes(like_count,view_count, color=brand))+
+  geom_point(na.rm = TRUE)+
+  geom_smooth(na.rm = TRUE, se=FALSE)+
+  scale_y_log10(labels = scales::comma)+
+  scale_x_log10(labels = scales::comma)+
+  scale_color_manual(values = my_pal)+
+  theme_minimal() +
+  theme(legend.title = element_blank(),
+        plot.title.position = 'plot')+
+  ylab("View Count")+
+  xlab("Like Count")+
+  labs(title = "Relationship between views and likes (log scale)")
+```
+
+Looking at our data on a log scale makes it easier to look at the relationship and compare between the different brands. Unsurprisingly the slope of the Doritos brand still stands out as one of the steepest. It might be worth examining the log transformation of the view count variable, in order to gain a better understanding of this affects the distribution, this is done in the figure below:
+
+```{r}
+library(highcharter, warn.conflicts = FALSE)
+options(highcharter.summarise.inform = FALSE)
+hchart(log(youtube$view_count),breaks = 20, name="log(view count)", fill="midnightblue")
+```
+
+We can now proceed to capture the variance of the viewer count by a few of the
+variables. The summary below outlines the independent variables and the model 
+r^2 values. 
+
+```{r}
+youtube %>% 
+  select(brand, 
+         funny,
+         show_product_quickly,
+         patriotic,
+         celebrity, 
+         danger, 
+         animals,
+         use_sex,
+         view_count,
+         like_count, 
+         dislike_count) -> for_modelling
+
+# Define recipe:
+youtube_recipe1 <- recipe(view_count~.,data=for_modelling) %>% 
+  step_log(all_numeric(),signed = TRUE)
+# Specify model:
+lm_mod1 <- linear_reg() %>% 
+  set_engine("lm") %>% 
+  set_mode("regression")
+# specify workflow:
+youtube_workflow1  <- workflow() %>% 
+  add_model(lm_mod1) %>% 
+  add_recipe(youtube_recipe1)
+
+youtube_workflow1 %>% 
+ fit(data=youtube) -> res1
+```
+
+```{r}
+res1 %>% 
+  extract_fit_engine() %>% 
+  summary()
+```
+
+We can easily filter for the variables that have a significance level that is 
+equal to 0.05 or less by passing the model summary to the `tidy()` function:
+
+```{r}
+res1 %>% 
+  extract_fit_engine() %>% 
+  summary() %>% 
+  tidy() %>% 
+  filter(p.value <= 0.05)
+```
+
+According to our model output the only variables with a statistically significant 
+effect on view count are the Hyundai and Toyota brands, whether a celebrity was
+used in the ad and the like count. All the variables except like count having a 
+negative effect on view count. 
+
+Another model can be explored, in this case it might be interesting to explore
+the interaction between like count and brand. The model summary is shown below:
+
+```{r}
+# Workflow with interaction term:
+# Define recipe:
+youtube_recipe2 <- recipe(view_count~.,data=for_modelling) %>% 
+  step_dummy(brand) %>% 
+  step_interact(terms = ~ like_count:starts_with("brand"))
+# Specify model:
+lm_mod2 <- linear_reg() %>% 
+  set_engine("lm") %>% 
+  set_mode("regression")
+# specify workflow:
+youtube_workflow  <- workflow() %>% 
+  add_model(lm_mod2) %>% 
+  add_recipe(youtube_recipe2)
+
+youtube_workflow %>% 
+ fit(data=youtube) -> res2
+
+res2 %>% 
+  extract_fit_engine() %>% 
+  summary()
+```
+
+## Compare the 2 models
+
+However in order to determine which model should be used, we should understand 
+which one performs better, an anova can be used to test whether the more complex
+model captures more of the variance than the less complex one:
+
+```{r}
+# First Model
+res2 %>% 
+  extract_fit_engine() ->y
+# Second Model
+res1 %>%
+  extract_fit_engine()->x
+# ANOVA Test of variance:
+anova(x,y)
+```
+
+Results show that the interaction model is not statistically significantly better, 
+therefore there is no point in using the more complex model, with the interaction
+term. Similarly, we can compare the models using Akaike's An Information Criteria,
+the lower the AIC the better the model. The results are shown below:
+
+```{r}
+AIC(x,y)
+```
+
+Since the first model has a much lower AIC, it is the better model. We can 
+proceed to generate bootstrap intervals, for that model, the confidence intervals
+being outlined below:
+
+```{r}
+# Bake data set:
+youtube_bootstrap <- recipe(view_count~.,data=for_modelling) %>% 
+  step_log(all_numeric(),signed=TRUE) %>% 
+  prep() %>% 
+  bake(new_data=NULL)
+# generate bootstrapped intervals
+doParallel::registerDoParallel()
+reg_intervals(view_count~., 
+              data = youtube_bootstrap,
+              times=1000) -> bootstrapped_model
+```
+
+
+```{r}
+bootstrapped_model 
+```
+
+The results from the bootstrap, further validate the previous findings, one 
+key distinction is that Kia has a statistically significant effect on view count
+and Hyundai doesn't. 
+
+# Conclusion, Reccomendations and Future Directions
+
+## Key takeaways
+
+This report explored data pertaining to Superbowl ad performance, on a variety of
+metrics. A few visualisations were provided to further elaborate on the fluctuation
+of metrics over time. Thereafter, the relationship between the variables were 
+explored, with an emphasis on view count and like count. Finally modelling was 
+performed to examine which variable had a statistically significant effect on 
+view count, the Toyota and Hyundai brands, along with the use of celebrity and like count 
+seemed to have statistically significant effect on view count. A bootstrap exercise
+showed that Kia rather than Hyundai has a statistically significant effect on 
+view count. Given that the bootstrap results show slightly different results 
+than the non-bootstrapped ones, it is recommended that a more granular analysis
+considering brand effect and their potential interactions with different variables
+be considered. 
+
+## Recommendations and Future Directions
+
+As per the results, it is recommended not to use celebrities in adverts as 
+this will  negatively influence view count. The like count will be as strong 
+indicator of view counts and therefore should be closely monitored
+by employing social listening. It is recommended that this research exercise is 
+performed on a longitudinal basis and across a greater range of years, in order 
+to pick out other effects on view count. 
+
+Future analysis might involve engaging in predictive analytics with the use 
+of non parametric statistical techniques, with the aim of predicting viewership 
+numbers. 
+
+
+
+
+
+
+
+
+
+
+
+
