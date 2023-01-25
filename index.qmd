@@ -8,9 +8,9 @@ format:
     toc: true
 ---
 
-```{r, echo=FALSE}
+```{r, echo=FALSE, message=FALSE, warning=FALSE,error=FALSE}
 # load Packages
-pacman::p_load(tidyverse,corrplot,reactablefmtr,reactable,tidymodels,gt,simplevis)
+pacman::p_load(tidyverse,corrplot,reactablefmtr,reactable,tidymodels,gt)
 library(dplyr, warn.conflicts = FALSE)
 
 # Suppress summarise info
@@ -330,7 +330,7 @@ The results from the bootstrap, further validate the previous findings, one
 key distinction is that Kia has a statistically significant effect on view count
 and Hyundai doesn't. 
 
-# Conclusion, Reccomendations and Future Directions
+# Conclusion, Recommendations and Future Directions
 
 ## Key takeaways
 
