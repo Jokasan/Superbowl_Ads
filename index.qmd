@@ -159,10 +159,10 @@ The relationship between likes and views can be further explored by plotting the
 ```{r, warning=FALSE, message=FALSE}
 youtube %>% 
   ggplot(aes(like_count,view_count, color=brand))+
-  geom_jitter(na.rm = TRUE)+
+  geom_point(na.rm = TRUE)+
   geom_smooth(na.rm = TRUE, se=FALSE)+
-  scale_y_continuous(labels=scales::number_format(scale = 100))+
-  scale_x_continuous(labels=scales::number_format(scale = 100))+
+  scale_y_continuous(labels=scales::number_format())+
+  scale_x_continuous(labels=scales::number_format())+
   scale_color_manual(values = my_pal)+
   theme_minimal() +
   labs(color="Brand")+
